@@ -47,7 +47,7 @@ a {
 
 #header kbd { color: #666; }
 
-#crawler, #iframe { margin-top: 45px; }
+#crawler, #iframewrapper { margin-top: 45px; }
 
 #header nav {
 	position: absolute;
@@ -176,15 +176,23 @@ li { position: relative; }
 
 /* --- iframe --- */
 
-#iframe {
-	border: none;
+#iframewrapper {
 	position: fixed;
-	display: block;
 	top: 0;
 	right: 0;
-	height: 50%;
-	width: 60%;
+	bottom: 50%;
+	left: 40%;
+	display: block;
 	z-index: 0;
+}
+
+#iframe {
+	border: none;
+	position: absolute;
+	top: 0;
+	left: 0;
+	height: 100%;
+	width: 100%;
 }
 
 /* --- output --- */
@@ -217,18 +225,14 @@ li { position: relative; }
 
 /* --- fullscreen output --- */
 
-#output { -webkit-transition: all .5s ease; }
-
 #chkOutputFullscreen {
 	position: absolute;
 	bottom: 10px;
 	right: 10px;
 	z-index: 301;
-	background: red;
 	width: 20px;
 	height: 20px;
 	display: block;
-	border: 1px solid green;
 	text-indent: -40px;
 	visibility: hidden;
 	cursor: pointer;
@@ -254,6 +258,16 @@ li { position: relative; }
 }
 
 #chkOutputFullscreen:hover ~ #output { z-index: 300; }
+
+/* --- responsivesauce --- */
+
+#crawler, #output, #iframewrapper { -webkit-transition: all .5s ease; }
+
+@media all and (min-width: 1000px) {
+	#crawler { right: 70%; }
+	#iframewrapper { left: 30%; bottom: 50%; }
+	#output { left: 30% }
+}
 
 /*
 
