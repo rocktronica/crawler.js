@@ -47,8 +47,6 @@ a {
 
 #header kbd { color: #666; }
 
-#crawler, #iframewrapper { margin-top: 45px; }
-
 #header nav {
 	position: absolute;
 	top: 0;
@@ -114,9 +112,9 @@ ul {
 	background: #111;
 	position: fixed;
 	left: 0;
-	top: 0;
+	top: 45px;
 	bottom: 0;
-	right: 60%;
+	width: 250px;
 	text-shadow: 0 -1px #000;
 	list-style-type: none;
 	z-index: 300;
@@ -178,10 +176,10 @@ li { position: relative; }
 
 #iframewrapper {
 	position: fixed;
-	top: 0;
+	top: 45px;
 	right: 0;
 	bottom: 50%;
-	left: 40%;
+	left: 250px;
 	display: block;
 	z-index: 0;
 }
@@ -204,7 +202,7 @@ li { position: relative; }
 	padding: 20px;
 	overflow: auto;
 	right: 0;
-	left: 40%;
+	left: 250px;
 	top: 50%;
 	bottom: 0;
 	margin: 0;
@@ -261,13 +259,13 @@ li { position: relative; }
 
 /* --- responsivesauce --- */
 
-#crawler, #output, #iframewrapper { -webkit-transition: all .5s ease; }
+#output { -webkit-transition: all .5s ease; }
 
-@media all and (min-width: 1000px) {
-	#crawler { right: 70%; }
-	#iframewrapper { left: 30%; bottom: 50%; }
-	#output { left: 30% }
-}
+/* @media all and (min-width: 1000px) {
+	ul { right: auto; width: 250px; }
+	#iframewrapper { left: 250px; width: auto; bottom: 50%; }
+	#output { left: 250px; }
+} */
 
 /*
 

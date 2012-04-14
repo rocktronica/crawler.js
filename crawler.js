@@ -2,17 +2,22 @@
 // If it were cleaner, I'd incline to call it a crawler boilerplate.
 // Tinker tinker.   - Tommy
 
-// do: backbone cleanup!, ul.click !== cycle, nav listens to .running
-// consider: page.parents(page1,page2), alternating iframes to avoid load flash, draggable panes
+// do: localstorage chk, backbone cleanup!, ul.click !== cycle
+// consider: throttled animation add, page.parents(page1,page2), draggable panes, regex link test
+// fix: unselectable nav buttons
+// hmmm: safe to use var crawler = this; even when not being called with new ()?
 
-(function(exports, $){
+(function($){
 
-	// this is admittedly awkward
-	exports.Crawler = function(settings) {
-
+	var root = this;
+	
+	root.Crawler = function(settings) {
+	
 		// cancel if inside a frame
-		if (exports.self !== top) { return false; };
+		if (root.self !== root.top) { return false; };
 		
+		var crawler = this; // to return, useful for console
+
 		var settings = settings || {}; settings = {
 			title: settings.title || "crawler.js",
 			wait: settings.wait || 1000,
@@ -42,32 +47,41 @@
 				console.warn("Limit reached.");
 			}
 		};
+		crawler.settings = settings;
 
 		var init = function(){
 		
 			var $body = $("body");
 		
 			var original = {
-				title: exports.document.title,
+				title: root.document.title,
 				background: $body.css("background")
-			}
-			
+			};
+			crawler.original = original;
+
 			$("link[rel='stylesheet']").not("#style").remove();
 			$body.empty().append("<link href='" + settings.cssurl + "' rel='stylesheet' id='style' type='text/css'>");
+			root.document.title = settings.title+' '+settings.separator+' '+original.title;
 		
 			var $output = $("<div />", {
 				id: "output"
-			}).appendTo($body).before('<input type="checkbox" id="chkOutputFullscreen" />');
+			}).appendTo($body);
+			$('<input />', {
+				type: "checkbox",
+				id: "chkOutputFullscreen",
+				checked: localStorage.chkOutputFullscreen
+			}).insertBefore($output);
+			var output = {}; crawler.output = output;
 			
 			function relativePath(sUrl) {
-				var a = exports.document.createElement('a');
+				var a = root.document.createElement('a');
 				a.href = sUrl;
 				return a.pathname
 			}
 			
 			var PageView = Backbone.View.extend({
 				tagName: "li",
-				template: _.template('<a href="<%= url %>"><%= url %></a>'),
+				template: _.template('<a href="<%= url %>" id=""><%= urlshort %></a>'),
 				events: {
 					"click": "load"
 				},
@@ -86,14 +100,57 @@
 						.toggleClass("crawled", this.model.get("crawled"))
 						.toggleClass("duplicate", this.model.get("duplicate"))
 						.toggleClass("invalid", this.model.get("invalid"));
-					if (this.model.get("crawled") && crawler.get("autoscroll")) {
-						$(crawler.view.el).stop().animate({
-							scrollTop: $(crawler.view.el).scrollTop() + $(this.el).position().top - ($(crawler.view.el).height() / 2)
-						}, Math.min(settings.wait, 250));
+					if (this.model.get("crawled") && app.get("autoscroll")) {
+						app.set("scrollTo", $(this.el).position().top);
 					}
 					return this;
 				}
 			});
+			
+			var Page = Backbone.Model.extend({
+				defaults: {
+					url: "",
+					urlshort: "",
+					crawled: false,
+					deep: 0,
+					invalid: false,
+					duplicate: false
+				},
+				initialize: function() {
+					this.set("urlshort", relativePath(this.get("url")));
+				}
+			});
+
+			var PageList = Backbone.Collection.extend({
+				model: Page,
+				has: function(sUrl) {
+					var sUrl = sUrl.toLowerCase();
+					// this should use include(), something like...
+					return (function(that){
+						var b = false;
+						that.each(function(page){
+							if (page.get("url") === sUrl) { b = true; }
+						});
+						return b;
+					}(this));
+				},
+				getNext: function() {
+					return this.find(function(page){
+						return !page.get("crawled");
+					});
+				},
+				crawled: function() {
+					return this.filter(function(page){ return page.get('crawled'); });
+				},
+				uncrawled: function() {
+					return this.without.apply(this, this.crawled());
+				},
+				progress: function() {
+					return Math.round(this.crawled().length / this.length * 100);
+				}
+			});
+			var pages = new PageList();
+			crawler.pages = pages;
 			
 			var Frame = Backbone.View.extend({
 				tagName: "iframe", id: "iframe",
@@ -120,7 +177,7 @@
 					$links.each(function(){
 						var $a = $(this);
 						var sUrl = $a[0].pathname;
-						if (exports.location.hostname === $a[0].hostname) {
+						if (root.location.hostname === $a[0].hostname) {
 							if (sUrl.indexOf("#") > -1) { sUrl = sUrl.substr(0, sUrl.indexOf("#")); }
 							if (sUrl.indexOf("?") > -1) { sUrl = sUrl.substr(0, sUrl.indexOf("?")); }
 							links.push(sUrl);
@@ -130,81 +187,24 @@
 					return links;
 				},
 			});
+			var frame = new Frame();
+			crawler.frame = frame;
 			
-			var Page = Backbone.Model.extend({
+			var App = Backbone.Model.extend({
 				defaults: {
-					url: "",
-					urlshort: "",
-					crawled: false,
-					deep: 0,
-					invalid: false,
-					duplicate: false
-				},
-				initialize: function() {
-					this.set("urlshort", relativePath(this.get("url")));
-				}
-			});
-			
-			var PageList = Backbone.Collection.extend({
-				model: Page,
-				has: function(sUrl) {
-					var sUrl = sUrl.toLowerCase();
-					// this should use include(), something like...
-					// return this.include(sUrl);
-					return (function(that){
-						var b = false;
-						that.each(function(page){
-							if (page.get("url") === sUrl) { b = true; }
-						});
-						return b;
-					}(this));
-				},
-				getNext: function() {
-					return this.find(function(page){
-						return !page.get("crawled");
-					});
-				},
-				crawled: function() {
-					return this.filter(function(page){ return page.get('crawled'); });
-				},
-				uncrawled: function() {
-					return this.without.apply(this, this.crawled());
-				},
-			});
-			
-			var CrawlerView = Backbone.View.extend({
-				el: $("<ul id='crawler' />").prependTo("body"),
-				initialize: function(){
-					var view = this;
-					$(document).keyup(function(e){
-						if (e.keyCode === 27) { view.model.toggle(); }
-					});
-				},
-				hoverOn: function() { this.model.set("autoscroll", false); },
-				hoverOff: function() { this.model.set("autoscroll", true); },
-				events: {
-					"mouseover": "hoverOn",
-					"mouseout": "hoverOff"
-				}
-			});
-			
-			var Crawler = Backbone.Model.extend({
-				view: undefined,  // i feel bad about this...
-				defaults: {
-					pages: new PageList(),
+					pages: pages,
 					running: false, busy: false,
 					wait: settings.wait,
 					deep: settings.deep,
 					max: settings.max,
 					limitreached: false,
 					done: false,
-					autoscroll: true
+					autoscroll: true,
+					scrollTo: 0
 				},
 				initialize: function() {
-					exports.document.title =  settings.title + " " + settings.separator + " " + original.title;
-					this.view = new CrawlerView({model:this});
 					this.add(location.pathname, 0);
-					output = settings.onInitialize(output, $output);
+					settings.onInitialize(output, $output);
 					this.start();
 				},
 				start: function() {
@@ -215,20 +215,19 @@
 				toggle: function() { this.set({ running: !this.get("running") }); this.cycle(); },
 				cycle: function() {
 	
-					// wtf?
-					header && header.set("progress", Math.round(this.get("pages").crawled().length / this.get("pages").length * 100));
-	
 					if (this.get("busy") || !this.get("running")) { return false; }
-					var _crawler = this;
+					var _app = this;
 					var page = this.get("pages").getNext();
 					if (!page) {
 						this.done();
 						return false;
 					}
-					_crawler.set("busy", true);
+					_app.set("busy", true);
+
+					this.trigger("cycle");
 	
 					var killBusy = setTimeout(function(){
-						_crawler.set("busy", false);
+						_app.set("busy", false);
 					}, 2000);
 					frame.load(page, function($doc){
 		
@@ -244,17 +243,17 @@
 						}
 		
 						if (!page.get("invalid")) {
-							output = settings.onFrameload(output, $output, $doc, page);
+							settings.onFrameload(output, $output, $doc, page);
 						}
 						
 						var links = frame.getAllLinks();
 						_.each(links, function(link){
-							_crawler.add(link, page.get("deep") + 1);
+							_app.add(link, page.get("deep") + 1);
 						});
 						setTimeout(function(){
-							_crawler.cycle();
-						}, _crawler.get("wait"));
-						_crawler.set("busy", false);
+							_app.cycle();
+						}, _app.get("wait"));
+						_app.set("busy", false);
 						
 					});
 				},
@@ -264,7 +263,6 @@
 						settings.onDone(output, $output);
 					}
 					this.set("done", true);
-					// need to tell headerview too
 				},
 				add: function(sUrl, iDeep) {
 					if (!sUrl || this.get("pages").has(sUrl)) { return false; }
@@ -279,32 +277,88 @@
 						url: sUrl,
 						deep: iDeep || 0
 					});
-					var view = new PageView({ model: page });
-					$(this.view.el).append(view.render().el);
 					this.get("pages").add(page);
 					return page;
 				},
 				reset: function(){
+					// sometimes this runs _after_ new pages get added. hmph!
+					this.stop();
 					this.get("pages").reset();
-					$(this.view.el).empty();
 					this.add(location.pathname, 0);
 					$output.empty();
-					output = settings.onInitialize(output, $output);
+					settings.onInitialize(output, $output);
+				}
+			});
+			var app = new App();
+			crawler.app = app;
+
+			var AppView = Backbone.View.extend({
+				el: $("<ul />").prependTo("body"),
+				initialize: function(){
+					_.bindAll(this, 'addOne', 'render', 'reset', 'setScroll');
+					pages.bind("add", this.addOne);
+					pages.bind("reset", this.reset);
+					var view = this;
+					$(document).keyup(function(e){
+						if (e.keyCode === 27) { view.model.toggle(); }
+					});
+					this.model.bind("change:scrollTo", this.setScroll);
+				},
+				reset: function(){
+					$(this.el).empty();
+				},
+				addOne: function(page){
+					var view = new PageView({model: page});
+					$(this.el).append(view.render().el);
+				},
+				hoverOn: function() { this.model.set("autoscroll", false); },
+				hoverOff: function() { this.model.set("autoscroll", true); },
+				setScroll: function(){
+					var iElementTop = this.model.get("scrollTo");
+					$(this.el).stop().animate({
+						scrollTop: $(this.el).scrollTop() + iElementTop - ($(this.el).height() / 2)
+					}, 250);
+				},
+				events: {
+					"mouseover": "hoverOn",
+					"mouseout": "hoverOff"
+				}
+			});
+			var appview = new AppView({model:app});
+			crawler.appview = appview;
+			
+			var Header = Backbone.Model.extend({
+				defaults: {
+					apptitle: settings.title,
+					pagetitle: original.title,
+					progress: 0,
+					toggleAction: "stop"
+				},
+				initialize: function(){
+					_.bindAll(this, 'updateToggle', 'updateProgress');
+					this.updateToggle();
+					pages.bind("all", this.updateProgress);
+					app.bind("change:running", this.updateToggle);
+				},
+				updateToggle: function(){
+					this.set("toggleAction", app.get("running") ? "stop" : "start");
+				},
+				updateProgress: function(){
+					var iProgress = pages.progress();
+					this.set("progress", iProgress);
 				}
 			});
 			
-			var frame = new Frame(); //{ model: page }
-			
-			var crawler = new Crawler();
-			exports.crawler = crawler;
-	
+			var header = new Header();
+			crawler.header = header;
+
 			var HeaderView = Backbone.View.extend({
 				el: $("<header id='header' />").prependTo("body"),
-				template: _.template('<h1><a href="#" id="h1a"><%= apptitle %></a> <kbd>' + settings.separator + '</kbd> <%= pagetitle %></h1><nav><kbd id="toggle" class="stop"></kbd><kbd id="restart" class="restart"></kbd></nav><div id="progress"><b></b></div>'),
+				template: _.template('<h1><a href="#" id="h1a"><%= apptitle %></a> <kbd>' + settings.separator + '</kbd> <%= pagetitle %></h1><nav><kbd id="toggle" class="<%= toggleAction %>"></kbd><kbd id="restart" class="restart"></kbd></nav><div id="progress"><b style="width:<%= progress %>%;"></b></div>'),
 				initialize: function(){
-	//				_.bindAll(this, 'render');
-	//				this.model.bind('change', this.render);
-					this.model.bind("change", this.updateProgress);
+					_.bindAll(this, 'stop', 'start', 'restart', 'render', 'updateProgress');
+					this.model.bind('change:progress', this.updateProgress);
+					this.model.bind("change:toggleAction", this.render);
 					this.render();
 				},
 				events: {
@@ -313,24 +367,22 @@
 					"click .start": "start",
 					"click .restart": "restart"
 				},
-				// these should listen to crawler's .running...
 				stop: function() {
-					$(this.el).find("#toggle").attr("class", "start");
-					crawler.stop();
+					app.stop();
 					return false;
 				},
 				start: function() {
-					$(this.el).find("#toggle").attr("class", "stop");
-					crawler.start()
+					app.start()
 					return false;
 				},
 				restart: function() {
 					this.stop();
-					crawler.reset();
+					app.reset();
 					return false;
 				},
 				updateProgress: function() {
-					$("#progress").find("b").css("width", this.get("progress") + "%");
+					var iProgress = this.model.get("progress");
+					$("#progress").find("b").css("width", iProgress + "%");
 				},
 				render: function(){
 					var sHtml = this.template(this.model.toJSON());
@@ -338,29 +390,15 @@
 					return this;
 				},
 			});
-			
-			var Header = Backbone.Model.extend({
-				defaults: {
-					apptitle: settings.title,
-					pagetitle: "Undefined",
-					progress: 0
-				}
-			});
-			
-			var header = new Header({
-				pagetitle: original.title,
-				total: crawler.get("pages").length
-			});
-			
-			var headerView = new HeaderView({ model: header });
+			var headerView = new HeaderView({model:header});
 			
 		}
 	
-		// loading dependencies from CDN. convince me otherwise.
+		// loading dependencies from CDN. could be smarter.
 		$.getScript("http://cdnjs.cloudflare.com/ajax/libs/underscore.js/1.3.1/underscore-min.js", function(){
 			$.getScript("http://cdnjs.cloudflare.com/ajax/libs/backbone.js/0.9.2/backbone-min.js", init);
 		});
 	
 	};
 
-}(this, jQuery));
+}(jQuery));
