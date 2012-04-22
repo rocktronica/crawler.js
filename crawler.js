@@ -1,15 +1,14 @@
 // My 1st proj w/ backbone. Entirely prepared to rewrite _all of it_.
-// If it were cleaner, I'd incline to call it a crawler boilerplate.
 // Tinker tinker.   - Tommy
 
-// do: localstorage chk, backbone cleanup!, ul.click !== cycle
-// consider: throttled animation add, page.parents(page1,page2), draggable panes, regex link test
-// fix: unselectable nav buttons
+// do: save draggable to localstorage, smarter windowResize, followCanonical, allowParams, allowHash
+// consider: page.parents(page1,page2), trycatch on frameload
 // hmmm: safe to use var crawler = this; even when not being called with new ()?
 
 (function($){
 
 	var root = this;
+	root.localStorage = root.localStorage || {};
 	
 	root.Crawler = function(settings) {
 	
@@ -23,29 +22,14 @@
 			wait: settings.wait || 1000,
 			deep: settings.deep || 5,
 			max: settings.max || 25,
+			match: settings.match || location.pathname.substr(0,location.pathname.lastIndexOf("/")),
 			separator: settings.separator || "»",
 			cssurl: settings.cssurl || "http://rocktronica.github.com/crawler.js/crawler.css",
-			onInitialize: settings.onInitialize || function(output, $output) {
-				var $table = $("<table />").html("<tr><td><strong>Page</strong></td><td><strong>Word&nbsp;Count</strong></td></tr>").appendTo($output);
-				output.$table = $table;
-				output.totalwordcount = 0;
-				return output;
-			},
-			onFrameload: settings.onFrameload || function(output, $output, $doc, page) {
-				var sTitle = $doc.find("title").html().trim();
-				var iWordCount = $doc.text().trim().split(/\s+/).length;
-				output.totalwordcount += iWordCount;
-				output.$table.append("<tr><td>" + sTitle + "<br /><small>" + page.get("urlshort") + "</small></td><td>" + iWordCount + "<td></tr>");
-				$output.scrollTop($output.contents().height());
-				return output;
-			},
-			onDone: settings.onDone || function(output, $output) {
-				console.warn("All done.");
-				output.$table.append("<tr><td><strong>Total</strong></td><td><em>" + output.totalwordcount + "</em><td></tr>");
-			},
-			onLimit: settings.onLimit || function(output, $output) {
-				console.warn("Limit reached.");
-			}
+			pluginsurl: settings.pluginsurl || "http://rocktronica.github.com/crawler.js/plugins.js",
+			onInitialize: settings.onInitialize || function($output) { },
+			onFrameload: settings.onFrameload || function($output, $doc, page) { },
+			onDone: settings.onDone || function($output) { },
+			onLimit: settings.onLimit || function($output) { }
 		};
 		crawler.settings = settings;
 
@@ -59,7 +43,7 @@
 			};
 			crawler.original = original;
 
-			$("link[rel='stylesheet']").not("#style").remove();
+			$("style, link[rel='stylesheet']").not("#style").remove();
 			$body.empty().append("<link href='" + settings.cssurl + "' rel='stylesheet' id='style' type='text/css'>");
 			root.document.title = settings.title+' '+settings.separator+' '+original.title;
 		
@@ -69,9 +53,12 @@
 			$('<input />', {
 				type: "checkbox",
 				id: "chkOutputFullscreen",
-				checked: localStorage.chkOutputFullscreen
-			}).insertBefore($output);
-			var output = {}; crawler.output = output;
+				checked: !!localStorage.chkOutputFullscreen
+			}).insertBefore($output).on("change", function(){
+				localStorage.chkOutputFullscreen = !!$(this).attr("checked") ? "checked" : "";
+				$body.toggleClass("nodrag", !!localStorage.chkOutputFullscreen);
+			});
+			// var output = {}; crawler.output = output;
 			
 			function relativePath(sUrl) {
 				var a = root.document.createElement('a');
@@ -90,7 +77,11 @@
 					this.model.bind('change', this.render);
 				},
 				load: function(){
-					frame.load(this.model);
+					if (!app || !app.get("done")) {
+						alert("Wait until everything's done!");
+					} else {
+						frame.load(this.model);
+					}
 					return false;
 				},
 				render: function() {
@@ -180,7 +171,9 @@
 						if (root.location.hostname === $a[0].hostname) {
 							if (sUrl.indexOf("#") > -1) { sUrl = sUrl.substr(0, sUrl.indexOf("#")); }
 							if (sUrl.indexOf("?") > -1) { sUrl = sUrl.substr(0, sUrl.indexOf("?")); }
-							links.push(sUrl);
+							if (sUrl.match(settings.match)) {
+								links.push(sUrl);
+							}
 						}
 					});
 					links = _.uniq(links);
@@ -204,7 +197,7 @@
 				},
 				initialize: function() {
 					this.add(location.pathname, 0);
-					settings.onInitialize(output, $output);
+					settings.onInitialize($output);
 					this.start();
 				},
 				start: function() {
@@ -243,7 +236,7 @@
 						}
 		
 						if (!page.get("invalid")) {
-							settings.onFrameload(output, $output, $doc, page);
+							settings.onFrameload($output, $doc, page);
 						}
 						
 						var links = frame.getAllLinks();
@@ -260,7 +253,7 @@
 				done: function() {
 					this.stop();
 					if (!this.get("done")) {
-						settings.onDone(output, $output);
+						settings.onDone($output);
 					}
 					this.set("done", true);
 				},
@@ -268,7 +261,7 @@
 					if (!sUrl || this.get("pages").has(sUrl)) { return false; }
 					if (this.get("pages").length > this.get("max") || iDeep > this.get("deep")) {
 						if (!this.get("limitreached")) {
-							settings.onLimit(output, $output);
+							settings.onLimit($output);
 							this.set("limitreached", true);
 						}
 						return false;
@@ -286,7 +279,7 @@
 					this.get("pages").reset();
 					this.add(location.pathname, 0);
 					$output.empty();
-					settings.onInitialize(output, $output);
+					settings.onInitialize($output);
 				}
 			});
 			var app = new App();
@@ -308,8 +301,9 @@
 					$(this.el).empty();
 				},
 				addOne: function(page){
-					var view = new PageView({model: page});
-					$(this.el).append(view.render().el);
+					var pageview = new PageView({model: page});
+					var $el = $(this.el);
+					$el.append(pageview.render().el);
 				},
 				hoverOn: function() { this.model.set("autoscroll", false); },
 				hoverOff: function() { this.model.set("autoscroll", true); },
@@ -392,13 +386,112 @@
 			});
 			var headerView = new HeaderView({model:header});
 			
-		}
-	
-		// loading dependencies from CDN. could be smarter.
-		$.getScript("http://cdnjs.cloudflare.com/ajax/libs/underscore.js/1.3.1/underscore-min.js", function(){
-			$.getScript("http://cdnjs.cloudflare.com/ajax/libs/backbone.js/0.9.2/backbone-min.js", init);
-		});
-	
+			// do jqUI stuff after CSS is loaded and elements ready
+			var waitForCss = setInterval(function(){
+				
+				var bReady = !!parseInt($("#progress").css("top"),10) && !!$("ul").find("li").size();
+				if (!bReady) { return false; }
+				
+				var $ul = $(appview.el), $framewrapper = $("#iframewrapper"), 
+					iHeaderHeight = $(headerView.el).height(), iHandleSize = 20,
+					throttle = {}, debounce = {};
+
+				var $dragUl = $("<div />", {
+					"class": "draggable",
+					id: "dragUl"
+				});
+				var dragUlEvent = function() {
+					$body.addClass("notransitions");
+					throttle.dragUl = throttle.dragUl || setTimeout(function(){
+						var pUlWidth = Math.ceil(($dragUl.position().left + (iHandleSize/2)) / $body.width() * 100);
+						$ul.css("width", pUlWidth + "%");
+						$framewrapper.css("left", pUlWidth + "%");
+						$output.css("left", pUlWidth + "%");
+						throttle.dragUl = undefined;
+					}, 100);
+					clearTimeout(debounce.notransitions);
+					debounce.notransitions = setTimeout(function(){
+						$body.removeClass("notransitions");
+					}, 200);
+				};
+				$dragUl.appendTo($body).draggable({
+					axis: "x",
+					containment: [iHeaderHeight, 0, $body.width() - iHeaderHeight, 0],
+					create: function(event, ui){
+						$dragUl.css({
+							left: $("ul").width() - (iHandleSize/2)
+						});
+					},
+					drag: dragUlEvent
+				});
+
+				var $dragOutput = $("<div />", {
+					"class": "draggable",
+					id: "dragOutput"
+				});
+				var dragOutputEvent = function() {
+					$body.addClass("notransitions");
+					throttle.dragOutput = throttle.dragOutput || setTimeout(function(){
+						var pOutputTop = Math.ceil(($dragOutput.position().top + (iHandleSize/2)) / $body.height() * 100);
+						$output.css("top", pOutputTop + "%");
+						var pFramewrapperBottom = Math.ceil(($output.height() + iHeaderHeight - (iHandleSize/2)) / $body.height() * 100);
+						$framewrapper.css("bottom", pFramewrapperBottom + "%");
+						throttle.dragOutput = undefined;
+					}, 100);
+					clearTimeout(debounce.notransitions);
+					debounce.notransitions = setTimeout(function(){
+						$body.removeClass("notransitions");
+					}, 200);
+				};
+				$dragOutput.appendTo($body).draggable({
+					axis: "y",
+					containment: [0, iHeaderHeight, 0, $body.height() - iHeaderHeight],
+					create: function(){
+						$dragOutput.css({
+							top: $output.position().top -(iHandleSize/2)
+						})
+					},
+					drag: dragOutputEvent
+				});
+
+				// this should use % instead of px...
+				$(window).on("resize", function(){
+					clearTimeout(debounce.windowResize);
+					debounce.windowResize = setTimeout(function(){
+						dragUlEvent();
+						dragOutputEvent();
+					}, 50);
+				});
+
+				// covers iframe for better dragging
+				var $dragCover = $("<div />", {
+					id: "dragCover"
+				}).appendTo($body);
+				
+				clearInterval(waitForCss);
+				
+			}, 1);
+			
+		}; // init
+
+		function getScriptsAndInit(){ $.getScript(settings.pluginsurl, init); }
+
+		if (!$ || !$.fn || !$.fn.jquery < "1.7") {
+			(function(url,success){
+				var head = document.getElementsByTagName("head")[0], done = false;
+				var script = document.createElement("script");
+				script.src = url;
+				script.onload = script.onreadystatechange = function(){
+					if ( !done && (!this.readyState || this.readyState == "loaded" || this.readyState == "complete") ) {
+						done = true;
+						$ = jQuery.noConflict();
+						success();
+					}
+				};
+				head.appendChild(script);
+			}('http://ajax.googleapis.com/ajax/libs/jquery/1.7/jquery.min.js', getScriptsAndInit));
+		} else { getScriptsAndInit(); }
+
 	};
 
 }(jQuery));
